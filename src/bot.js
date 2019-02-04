@@ -1,0 +1,452 @@
+import { ELEMENT, COMMANDS, ENEMY_SNAKE } from './constants';
+import {
+    isGameOver,
+    getHeadPosition,
+    getElementByXY,
+    getBoardSize,
+    getBoardAsArray,
+    getBoardAsString,
+    getXYByPosition,
+    getAt,
+    getSnakeLength,
+    getEnemiesLength,
+    findNextElements,
+    getEnemiesCount,
+    getSurround,
+    getSurroundPoints
+} from './utils';
+
+// Bot Example
+export function getNextSnakeMove(board, logger) {
+    if (isGameOver(board)) {
+        return '';
+    }
+    const headPosition = getHeadPosition(board);
+    if (!headPosition) {
+        return '';
+    }
+    logger('Head:' + JSON.stringify(headPosition));
+
+    return getNextCommand(board, headPosition);
+}
+
+let previousCommand = '';
+
+const oppositesMap = {
+    'LEFT': 'RIGHT',
+    'RIGHT': 'LEFT',
+    'UP': 'DOWN',
+    'DOWN': 'UP'
+};
+
+let allowed = [
+    ELEMENT.NONE,
+    ELEMENT.GOLD,
+    ELEMENT.APPLE,
+    ELEMENT.FURY_PILL,
+    ELEMENT.FLYING_PILL
+];
+let itemsToSearchOriginal = [
+    ELEMENT.GOLD,
+    ELEMENT.APPLE,
+    ELEMENT.FURY_PILL
+];
+
+let itemsToSearch = [
+    ELEMENT.GOLD,
+    ELEMENT.APPLE,
+    ELEMENT.FURY_PILL
+];
+
+let furyTargets = [ELEMENT.STONE].concat(ENEMY_SNAKE);
+
+let furyAllowed = allowed.concat(furyTargets);
+
+let commandMap = {
+    LEFT: 0,
+    UP: 1,
+    RIGHT: 2,
+    DOWN: 3
+};
+
+let commandMapReverse = {
+    0: 'LEFT',
+    1: 'UP',
+    2: 'RIGHT',
+    3: 'DOWN'
+};
+
+let headSet = [
+    ELEMENT.HEAD_DOWN,
+    ELEMENT.HEAD_LEFT,
+    ELEMENT.HEAD_RIGHT,
+    ELEMENT.HEAD_UP,
+    ELEMENT.HEAD_DEAD,
+    ELEMENT.HEAD_EVIL,
+    ELEMENT.HEAD_FLY,
+    ELEMENT.HEAD_SLEEP
+];
+let isFury = 0;
+
+let PASSIVE_ENEMY_HEAD = [
+    ELEMENT.ENEMY_HEAD_DOWN,
+    ELEMENT.ENEMY_HEAD_LEFT,
+    ELEMENT.ENEMY_HEAD_RIGHT,
+    ELEMENT.ENEMY_HEAD_UP,
+    ELEMENT.ENEMY_HEAD_FLY
+];
+
+function getNextCommand(board, head) {
+    let itemPositions = [];
+    let enemies = getEnemiesLength(board);
+    furyControl(board);
+    let fireAct = isFury;
+    let SNAKE_LENGTH = getSnakeLength(board);
+
+    if (isFury) {
+        itemsToSearch = furyTargets;
+        allowed = furyAllowed;
+    } else if (SNAKE_LENGTH > 4) {
+        itemsToSearch = itemsToSearchOriginal;
+        itemsToSearch.push(ELEMENT.STONE);
+
+        allowed = allowed.filter(item => !~furyTargets.indexOf(item));
+        allowed.push(ELEMENT.STONE)
+    } else {
+        allowed = allowed.filter(item => !~furyTargets.indexOf(item));
+        itemsToSearch = itemsToSearchOriginal;
+    }
+
+    /*TODO: TEST aggressive mode*/
+    console.log(SNAKE_LENGTH, enemies.reduce((acc, enemy) => acc += enemy.length, 0));
+
+    let enemiesCount = getEnemiesCount(board);
+    allowed = allowed.filter(item => !~PASSIVE_ENEMY_HEAD.indexOf(item));
+    allowed = allowed.filter(item => item !== ELEMENT.STONE);
+    itemsToSearch = itemsToSearch.filter(item => item !== ELEMENT.STONE);
+
+    if (enemiesCount === 1) {
+        allowed = allowed.filter(item => item !== ELEMENT.STONE);
+        itemsToSearch = itemsToSearch.filter(item => item !== ELEMENT.STONE);
+        if (SNAKE_LENGTH - enemies[0].length > 1) {
+            let surround = getSurround(board, head);
+            /*TODO: Search apples and coins in surround*/
+            itemsToSearch = PASSIVE_ENEMY_HEAD;
+            allowed = allowed.concat(PASSIVE_ENEMY_HEAD)
+        }
+    }
+
+    let offset = -1;
+    while ((offset = findNextItem(board, offset)) >= 0) {
+        let position = getXYByPosition(board, offset);
+        if (isPointAccessible(board, position)) {
+            itemPositions.push(position);
+        }
+    }
+
+    let potentialTargetsCount = 0;
+    enemies.forEach(enemy => {
+        if (SNAKE_LENGTH - enemy.length > 1) {
+            potentialTargetsCount++;
+            itemPositions.push(enemy);
+        }
+    });
+
+    console.log('targets:', potentialTargetsCount);
+
+    if (potentialTargetsCount) {
+        itemsToSearch = itemsToSearch.concat(PASSIVE_ENEMY_HEAD);
+        allowed = allowed.concat(PASSIVE_ENEMY_HEAD);
+    }
+
+    let { nearestDistancesPoint, nearestPoint } = findNearestPoint(board, head, itemPositions);
+
+    if (!nearestDistancesPoint) {
+        console.log('NO NEAREST POINT!');
+        let surround = getSurround(board, head);
+        const ratings = surround.map(rateElement);
+        return getCommandByRatings(ratings);
+    }
+
+    let preCommand = moveToPoint(board, head, nearestPoint, nearestDistancesPoint);
+    if (isCommandOppositeToPrevious(preCommand)) {
+        preCommand = turnSideways(board, head, nearestDistancesPoint.dy);
+    }
+
+    preCommand = findSafe(board, head, nearestPoint, preCommand);
+
+    previousCommand = preCommand;
+    return fireAct ? `ACT,${preCommand}` : preCommand;
+}
+
+function furyControl(board) {
+    if (~board.indexOf(ELEMENT.HEAD_EVIL) && isFury < 1) {
+        isFury = 9;
+    } else if (~board.indexOf(ELEMENT.HEAD_EVIL)) {
+        isFury--;
+    } else {
+        isFury = 0;
+    }
+}
+
+function findNextItem(board, offset) {
+    return findNextElements(board, offset, itemsToSearch);
+}
+
+function isPointAccessible(board, position) {
+    let nextPoint = getAt(board, position.x, position.y);
+    let allowedClone = allowed.slice();
+    if (nextPoint === ELEMENT.STONE && isFury < 2 && getSnakeLength(board) < 8) {
+        allowedClone = allowedClone.filter(item => item !== ELEMENT.STONE);
+    }
+    let surroundBlockers = getSurroundPoints(position)
+        .filter(point => {
+            return !allowedClone.includes(getAt(board, point.x, point.y))
+        })
+        .filter(ob => ELEMENT.WALL === getAt(board, ob.x, ob.y));
+    return !surroundBlockers
+        .some(block =>
+            surroundBlockers.some(ob => ob.x === block.x && ob.y !== block.y) ||
+            surroundBlockers.some(ob => ob.y === block.y && ob.x !== block.x));
+}
+
+function pointAccessibleCount(board, position) {
+    return getSurroundPoints(position)
+        .filter(point => {
+            return allowed.includes(getAt(board, point.x, point.y))
+        }).length
+}
+
+function isPointAllowed(pointCharCode) {
+    return allowed.includes(pointCharCode);
+}
+
+function findSafe(board, head, endPoint, nextCommand) {
+
+    /*LEFT,UP,RIGHT,DOWN*/
+    let surround = getSurround(board, head);
+    let surroundPoints = getSurroundPoints(head);
+    let currentCommandIndex = commandMap[nextCommand];
+
+    if (isPointAllowed(surround[currentCommandIndex])
+        && isPointAccessible(board, surroundPoints[currentCommandIndex])) {
+        return nextCommand;
+    } else {
+        return findNearestSafePoint(board, head, nextCommand, endPoint);
+    }
+}
+
+function findNearestPoint(board, startPoint, points) {
+    let distancesPoints = points
+        .map(endPoint => findPathDeltas(startPoint, endPoint));
+
+    let distances = distancesPoints.map(item => {
+        let directionToPointX = item.xDirection = item.dx >= 0 ? 'LEFT' : 'RIGHT';
+        let directionToPointY = item.yDirection = item.dy >= 0 ? 'UP' : 'DOWN';
+
+        let additionalXSteps = oppositesMap[previousCommand] === directionToPointX ? 2 : 0;
+        let additionalYSteps = oppositesMap[previousCommand] === directionToPointY ? 2 : 0;
+
+        let { isYSafe, isXSafe } = isSafeVHPath(board, startPoint, item);
+
+        if (!isYSafe) {
+            additionalYSteps += 15;
+        }
+
+        if (!isXSafe) {
+            additionalXSteps += 15;
+        }
+
+        if (!isYSafe && !isXSafe) {
+            additionalXSteps += 55;
+        }
+
+        return Math.abs(item.dx) + Math.abs(item.dy) + additionalXSteps + additionalYSteps;
+    });
+
+    let minDistance = Math.min(...distances);
+    let pointIndex = distances.indexOf(minDistance);
+
+    let nearestPoint = points[pointIndex];
+    let nearestDistancesPoint = distancesPoints[pointIndex];
+    return {
+        nearestPoint, nearestDistancesPoint
+    }
+}
+
+function findPathDeltas(startPoint, endPoint) {
+    return {
+        dx: startPoint.x - endPoint.x, dy: startPoint.y - endPoint.y
+    };
+}
+
+function isSafePath(board, path) {
+    return !path.some(point => !allowed.includes(getAt(board, point.x, point.y)));
+}
+
+function findAllSafePaths(board, startPoint, endPoint) {
+    let pointsDelta = findPathDeltas(startPoint, endPoint);
+
+    let yPath = [];
+    for (let i = 0; i < Math.abs(endPoint.dy); ++i) {
+        for (let j = 0; j < Math.abs(endPoint.dy); ++j) {
+            yPath.push({
+                x: pointsDelta.dy > 0 ? startPoint.x -= i : startPoint.x += i,
+                y: pointsDelta.dy > 0 ? startPoint.y -= j : startPoint.y += j
+            })
+        }
+    }
+    let last = yPath.slice().pop();
+
+    let lastY = last ? last.y : startPoint.y;
+    let xPath = [];
+    for (let i = 0; i < Math.abs(endPoint.dx); i++) {
+        xPath.push({
+            x: endPoint.dx > 0 ? startPoint.x - 1 : startPoint.x + 1,
+            y: lastY
+        })
+    }
+
+    /*TODO: Make sense to count  all blockers*/
+    /*TODO: IS path safe working only for one step, does it make sense to cache or move this logic to steps count*/
+    let isYSafe = isSafePath(board, yPath);
+    let isXSafe = isSafePath(board, xPath);
+    return {
+        isYSafe,
+        isXSafe
+    }
+}
+
+function turnSideways(board, head, isVertical) {
+    if (isVertical && allowed.includes(getAt(board, head.x + 1, head.y))) {
+        return 'LEFT';
+    } else if (isVertical) {
+        return 'RIGHT'
+    } else if (allowed.includes(getAt(board, head.x, head.y + 1))) {
+        return 'DOWN';
+    } else {
+        return 'UP'
+    }
+}
+
+function isCommandOppositeToPrevious(preCommand) {
+    return oppositesMap[preCommand] === previousCommand;
+}
+
+function moveToPoint(board, head, point, distancePoint) {
+
+    /*TODO: Make sense to count  all blockers*/
+    /*TODO: IS path safe working only for one step, does it make sense to cache or move this logic to steps count*/
+    let { isYSafe, isXSafe } = isSafeVHPath(board, head, distancePoint);
+    return isYSafe && distancePoint.dy ? distancePoint.yDirection : distancePoint.xDirection;
+}
+
+function isSafeVHPath(board, headOrigin, distancePoint) {
+    let head = Object.assign({}, headOrigin);
+    let yPath = [];
+    for (let i = 0; i < Math.abs(distancePoint.dy); i++) {
+        yPath.push({
+            x: head.x,
+            y: distancePoint.dy > 0 ? head.y -= 1 : head.y += 1
+        })
+    }
+    let last = yPath.slice().pop();
+
+    let lastY = last ? last.y : head.y;
+    let xPath = [];
+    for (let i = 0; i < Math.abs(distancePoint.dx); i++) {
+        xPath.push({
+            x: distancePoint.dx > 0 ? head.x -= 1 : head.x += 1,
+            y: lastY
+        })
+    }
+
+    /*TODO: Make sense to count  all blockers*/
+    /*TODO: IS path safe working only for one step, does it make sense to cache or move this logic to steps count*/
+
+    let isYSafe = isSafePath(board, yPath);
+    let isXSafe = isSafePath(board, xPath);
+    return {
+        isYSafe,
+        isXSafe
+    }
+}
+
+function rateElement(element) {
+    switch (element) {
+        case ELEMENT.GOLD:
+        case ELEMENT.APPLE:
+            return 5;
+        case ELEMENT.FURY_PILL:
+        case ELEMENT.FLYING_PILL:
+            return 4;
+        case ELEMENT.NONE:
+            return 3;
+        case ELEMENT.STONE:
+            return 2;
+        case ELEMENT.TAIL_END_DOWN:
+        case ELEMENT.TAIL_END_LEFT:
+        case ELEMENT.TAIL_END_UP:
+        case ELEMENT.TAIL_END_RIGHT:
+        case ELEMENT.TAIL_INACTIVE:
+        case ELEMENT.BODY_HORIZONTAL:
+        case ELEMENT.BODY_VERTICAL:
+        case ELEMENT.BODY_LEFT_DOWN:
+        case ELEMENT.BODY_LEFT_UP:
+        case ELEMENT.BODY_RIGHT_DOWN:
+        case ELEMENT.BODY_RIGHT_UP:
+            return 1;
+        default:
+            return -1
+    }
+}
+
+function findNearestSafePoint(board, head, currentCommand, endPoint) {
+    let skippedIndex = commandMap[currentCommand];
+    let surround = getSurroundPoints(head);
+    let surroundCandidates = surround.slice();
+
+    surroundCandidates.splice(skippedIndex, 1);
+    surroundCandidates = surroundCandidates
+        .filter(point =>
+            isPointAccessible(board, point) && isPointAllowed(getAt(board, point.x, point.y)))
+        .sort((a, b) => pointAccessibleCount(board, a) - pointAccessibleCount(board, b));
+
+    if (!surroundCandidates.length) {
+        console.log('NOT SURROUND CANDIDATES, endpoint:', endPoint);
+        console.log('NOT SURROUND CANDIDATES, surroundCandidates:', surroundCandidates);
+        let surround = getSurround(board, head);
+        const ratings = surround.map(rateElement);
+
+        return getCommandByRatings(ratings);
+    }
+
+    let candidate = surroundCandidates[0];
+
+    if (surroundCandidates[0] === surroundCandidates[1]) {
+        candidate = findNearestPoint(board, endPoint, [surroundCandidates[0], surroundCandidates[1]]);
+    }
+
+    let index = findByXY(candidate, surround);
+    return commandMapReverse[index];
+
+}
+
+function findByXY(point, pointsList = []) {
+    return pointsList.findIndex(p => p.x === point.x && p.y === point.y)
+}
+
+function getCommandByRatings(ratings) {
+    let indexToCommand = ['LEFT', 'UP', 'RIGHT', 'DOWN'];
+    let maxIndex = 0;
+    let max = -Infinity;
+    for (let i = 0; i < ratings.length; i++) {
+        let r = ratings[i];
+        if (r > max) {
+            maxIndex = i;
+            max = r;
+        }
+    }
+
+    return indexToCommand[maxIndex];
+}

@@ -23,113 +23,41 @@ export function getBoardSize(board) {
 }
 
 export function getSnakeLength(board) {
-    let snakeElements = [
-        ELEMENT.HEAD_DOWN,
-        ELEMENT.HEAD_LEFT,
-        ELEMENT.HEAD_RIGHT,
-        ELEMENT.HEAD_UP,
-        ELEMENT.HEAD_DEAD,
-        ELEMENT.HEAD_EVIL,
-        ELEMENT.HEAD_FLY,
-        ELEMENT.HEAD_SLEEP,
-        ELEMENT.TAIL_END_DOWN,
-        ELEMENT.TAIL_END_LEFT,
-        ELEMENT.TAIL_END_UP,
-        ELEMENT.TAIL_END_RIGHT,
-        ELEMENT.TAIL_INACTIVE,
-        ELEMENT.BODY_HORIZONTAL,
-        ELEMENT.BODY_VERTICAL,
-        ELEMENT.BODY_LEFT_DOWN,
-        ELEMENT.BODY_LEFT_UP,
-        ELEMENT.BODY_RIGHT_DOWN,
-        ELEMENT.BODY_RIGHT_UP
-    ];
     let offset = -1;
     let length = 0;
-    while ((offset = findNextElements(board, offset, snakeElements)) >= 0) {
+    while ((offset = findNextElements(board, offset, ELEMENT.SNAKE_ELEMENTS)) >= 0) {
         length++;
     }
 
     return length;
 }
 
-let enemyHead = [
-    ELEMENT.ENEMY_HEAD_DOWN,
-    ELEMENT.ENEMY_HEAD_LEFT,
-    ELEMENT.ENEMY_HEAD_RIGHT,
-    ELEMENT.ENEMY_HEAD_UP,
-    ELEMENT.ENEMY_HEAD_EVIL,
-    ELEMENT.ENEMY_HEAD_FLY
+const ENEMY_HEADLESS = [
+    ...ELEMENT.ENEMY_TAIL,
+    ...ELEMENT.ENEMY_BODY
 ];
 
-let enemyTail = [
-    ELEMENT.ENEMY_TAIL_END_DOWN,
-    ELEMENT.ENEMY_TAIL_END_LEFT,
-    ELEMENT.ENEMY_TAIL_END_UP,
-    ELEMENT.ENEMY_TAIL_END_RIGHT,
-];
-
-export function getEnemiesCount(board) {
-
-    let offset = -1;
-    let length = 0;
-    while ((offset = findNextElements(board, offset, enemyHead)) >= 0) {
-        length++;
-    }
-
-    return length;
-}
-
-let enemy = [
-    ELEMENT.ENEMY_HEAD_DOWN,
-    ELEMENT.ENEMY_HEAD_LEFT,
-    ELEMENT.ENEMY_HEAD_RIGHT,
-    ELEMENT.ENEMY_HEAD_UP,
-    ELEMENT.ENEMY_HEAD_EVIL,
-    ELEMENT.ENEMY_HEAD_FLY,
-    ELEMENT.ENEMY_TAIL_END_DOWN,
-    ELEMENT.ENEMY_TAIL_END_LEFT,
-    ELEMENT.ENEMY_TAIL_END_UP,
-    ELEMENT.ENEMY_TAIL_END_RIGHT,
-    ELEMENT.ENEMY_TAIL_INACTIVE,
-    ELEMENT.ENEMY_BODY_HORIZONTAL,
-    ELEMENT.ENEMY_BODY_VERTICAL,
-    ELEMENT.ENEMY_BODY_LEFT_DOWN,
-    ELEMENT.ENEMY_BODY_LEFT_UP,
-    ELEMENT.ENEMY_BODY_RIGHT_DOWN,
-    ELEMENT.ENEMY_BODY_RIGHT_UP
-];
-
-let enemyBody = [
-    ELEMENT.ENEMY_TAIL_END_DOWN,
-    ELEMENT.ENEMY_TAIL_END_LEFT,
-    ELEMENT.ENEMY_TAIL_END_UP,
-    ELEMENT.ENEMY_TAIL_END_RIGHT,
-    ELEMENT.ENEMY_TAIL_INACTIVE,
-    ELEMENT.ENEMY_BODY_HORIZONTAL,
-    ELEMENT.ENEMY_BODY_VERTICAL,
-    ELEMENT.ENEMY_BODY_LEFT_DOWN,
-    ELEMENT.ENEMY_BODY_LEFT_UP,
-    ELEMENT.ENEMY_BODY_RIGHT_DOWN,
-    ELEMENT.ENEMY_BODY_RIGHT_UP
-];
-
-export function getEnemiesLength(board) {
+export function getEnemies(board) {
     let offset = -1;
     let enemies = [];
-    while ((offset = findNextElements(board, offset, enemyHead)) >= 0) {
-        let position = getXYByPosition(board, offset);
-        position.length = computeEnemyLength(board, position);
-        enemies.push(position);
+    while ((offset = findNextElements(board, offset, ELEMENT.ENEMY_HEAD)) >= 0) {
+        enemies.push(getComputedEnemy(board, getXYByPosition(board, offset)));
     }
     return enemies;
 }
 
-function computeEnemyLength(board, position) {
+function getComputedEnemy(board, position) {
     if (!position) {
         /*TODO: Debug this case*/
         return 0;
     }
+    let enemy = {
+        isFlying: false,
+        isFurious: false,
+        head: position,
+        path: []
+    };
+
     let headType = getAt(board, position.x, position.y);
     let enemyLength = 1;
     position = { ...position };
@@ -151,23 +79,29 @@ function computeEnemyLength(board, position) {
         default:
             let surroundPoints = getSurroundPoints(position);
             let surround = getSurround(board, position);
-            let index = surround.findIndex(item => ~enemyBody.indexOf(item));
+            let index = surround.findIndex(item => ~ENEMY_HEADLESS.indexOf(item));
             position = surroundPoints[index];
-            console.log('default head:', position);
-            console.log('default head prev:', prevPosition)
-        /*TODO: logic for EVIL AND FLY HEAD*/
+            if (headType === ELEMENT.ENEMY_HEAD_EVIL) {
+                enemy.isFurious = true;
+            } else if (headType === ELEMENT.ENEMY_HEAD_FLY) {
+                enemy.isFlying = true;
+            }
+
     }
+
+    enemy.path.push({ ...position });
+
     while (true) {
         if (!position) {
             break;
         }
         let element = getAt(board, position.x, position.y);
-        if (~enemyTail.indexOf(element)) {
+        if (~ELEMENT.ENEMY_TAIL.indexOf(element)) {
             enemyLength++;
             break;
         }
 
-        if (!~enemy.indexOf(element)) {
+        if (!~ELEMENT.ENEMY_ELEMENTS.indexOf(element)) {
             console.log(prevPosition, position);
             console.log(element);
             console.log(getBoardAsString(board));
@@ -227,16 +161,19 @@ function computeEnemyLength(board, position) {
                 break;
             default:
                 console.log('DEFAULT?', element);
-                console.log('PREV?', getAt(board, prevPosition.x, prevPosition.y))
+                console.log('PREV?', getAt(board, prevPosition.x, prevPosition.y));
                 console.log(getBoardAsString(board));
                 console.log('######################################################')
         }
+
+        enemy.path.push({ ...position });
+
         enemyLength++;
         prevPosition = { ...positionClone };
-
     }
-    return enemyLength;
 
+    enemy.length = enemyLength;
+    return enemy;
 }
 
 export function getSurround(board, position) {
@@ -297,21 +234,14 @@ export function isOutOf(board, x, y) {
 
 export function getHeadPosition(board) {
     return getFirstPositionOf(board, [
-        ELEMENT.HEAD_DOWN,
-        ELEMENT.HEAD_LEFT,
-        ELEMENT.HEAD_RIGHT,
-        ELEMENT.HEAD_UP,
-        ELEMENT.HEAD_DEAD,
-        ELEMENT.HEAD_EVIL,
-        ELEMENT.HEAD_FLY,
-        ELEMENT.HEAD_SLEEP,
+        ...ELEMENT.SNAKE_HEAD
     ]);
 }
 
 export function getFirstPositionOf(board, elements) {
-    for (var i = 0; i < elements.length; i++) {
-        var element = elements[i];
-        var position = board.indexOf(element);
+    for (let i = 0; i < elements.length; i++) {
+        let element = elements[i];
+        let position = board.indexOf(element);
         if (position !== -1) {
             return getXYByPosition(board, position);
         }

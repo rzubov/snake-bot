@@ -1,25 +1,4 @@
-/*-
- * #%L
- * Codenjoy - it's a dojo-like platform from developers to developers.
- * %%
- * Copyright (C) 2018 - 2019 Codenjoy
- * %%
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public
- * License along with this program.  If not, see
- * <http://www.gnu.org/licenses/gpl-3.0.html>.
- * #L%
- */
-export const ELEMENT = {
+const ELEMENT = {
     NONE: ' ',
     WALL: '☼',
     START_FLOOR: '#',
@@ -75,8 +54,74 @@ export const ELEMENT = {
     ENEMY_BODY_LEFT_DOWN: '┐',
     ENEMY_BODY_LEFT_UP: '┘',
     ENEMY_BODY_RIGHT_DOWN: '┌',
-    ENEMY_BODY_RIGHT_UP: '└'
+    ENEMY_BODY_RIGHT_UP: '└',
 };
+
+ELEMENT.SNAKE_HEAD = [
+    ELEMENT.HEAD_DOWN,
+    ELEMENT.HEAD_LEFT,
+    ELEMENT.HEAD_RIGHT,
+    ELEMENT.HEAD_UP,
+    ELEMENT.HEAD_DEAD,
+    ELEMENT.HEAD_EVIL,
+    ELEMENT.HEAD_FLY,
+    ELEMENT.HEAD_SLEEP
+];
+ELEMENT.SNAKE_BODY = [
+    ELEMENT.BODY_HORIZONTAL,
+    ELEMENT.BODY_VERTICAL,
+    ELEMENT.BODY_LEFT_DOWN,
+    ELEMENT.BODY_LEFT_UP,
+    ELEMENT.BODY_RIGHT_DOWN,
+    ELEMENT.BODY_RIGHT_UP
+];
+ELEMENT.SNAKE_TAIL = [
+    ELEMENT.TAIL_END_DOWN,
+    ELEMENT.TAIL_END_LEFT,
+    ELEMENT.TAIL_END_UP,
+    ELEMENT.TAIL_END_RIGHT,
+    ELEMENT.TAIL_INACTIVE
+];
+ELEMENT.SNAKE_ELEMENTS = [
+    ...ELEMENT.SNAKE_HEAD,
+    ...ELEMENT.SNAKE_BODY,
+    ...ELEMENT.SNAKE_TAIL
+];
+ELEMENT.ENEMY_PASSIVE_HEAD = [
+    ELEMENT.ENEMY_HEAD_DOWN,
+    ELEMENT.ENEMY_HEAD_LEFT,
+    ELEMENT.ENEMY_HEAD_RIGHT,
+    ELEMENT.ENEMY_HEAD_UP,
+];
+ELEMENT.ENEMY_HEAD = [
+    ...ELEMENT.ENEMY_PASSIVE_HEAD,
+    ELEMENT.ENEMY_HEAD_EVIL,
+    ELEMENT.ENEMY_HEAD_FLY,
+    ELEMENT.ENEMY_HEAD_DEAD,
+    ELEMENT.ENEMY_HEAD_SLEEP
+];
+ELEMENT.ENEMY_BODY = [
+    ELEMENT.ENEMY_BODY_HORIZONTAL,
+    ELEMENT.ENEMY_BODY_VERTICAL,
+    ELEMENT.ENEMY_BODY_LEFT_DOWN,
+    ELEMENT.ENEMY_BODY_LEFT_UP,
+    ELEMENT.ENEMY_BODY_RIGHT_DOWN,
+    ELEMENT.ENEMY_BODY_RIGHT_UP
+];
+ELEMENT.ENEMY_TAIL = [
+    ELEMENT.ENEMY_TAIL_END_DOWN,
+    ELEMENT.ENEMY_TAIL_END_LEFT,
+    ELEMENT.ENEMY_TAIL_END_UP,
+    ELEMENT.ENEMY_TAIL_END_RIGHT,
+    ELEMENT.ENEMY_TAIL_INACTIVE,
+];
+ELEMENT.ENEMY_ELEMENTS = [
+    ...ELEMENT.ENEMY_HEAD,
+    ...ELEMENT.ENEMY_TAIL,
+    ...ELEMENT.ENEMY_BODY
+];
+
+export { ELEMENT };
 
 export const COMMANDS = {
     UP: 'UP', // snake momves
@@ -84,22 +129,31 @@ export const COMMANDS = {
     LEFT: 'LEFT',
     RIGHT: 'RIGHT',
     ACT: 'ACT', // drop stone if any
+    OPPOSITE: {
+        LEFT: 'RIGHT',
+        RIGHT: 'LEFT',
+        UP: 'DOWN',
+        DOWN: 'UP'
+    },
+    GET_INDEX: {
+        LEFT: 0,
+        UP: 1,
+        RIGHT: 2,
+        DOWN: 3
+    },
+    BY_INDEX: {
+        0: 'LEFT',
+        1: 'UP',
+        2: 'RIGHT',
+        3: 'DOWN'
+    }
+
 };
 
-export const ENEMY_SNAKE = [
-    ELEMENT.ENEMY_HEAD_DOWN,
-    ELEMENT.ENEMY_HEAD_LEFT,
-    ELEMENT.ENEMY_HEAD_RIGHT,
-    ELEMENT.ENEMY_HEAD_UP,
-    ELEMENT.ENEMY_TAIL_END_DOWN,
-    ELEMENT.ENEMY_TAIL_END_LEFT,
-    ELEMENT.ENEMY_TAIL_END_UP,
-    ELEMENT.ENEMY_TAIL_END_RIGHT,
-    ELEMENT.ENEMY_TAIL_INACTIVE,
-    ELEMENT.ENEMY_BODY_HORIZONTAL,
-    ELEMENT.ENEMY_BODY_VERTICAL,
-    ELEMENT.ENEMY_BODY_LEFT_DOWN,
-    ELEMENT.ENEMY_BODY_LEFT_UP,
-    ELEMENT.ENEMY_BODY_RIGHT_DOWN,
-    ELEMENT.ENEMY_BODY_RIGHT_UP
+export const FURY_TARGETS = [
+    ELEMENT.STONE,
+
+    ...ELEMENT.ENEMY_PASSIVE_HEAD,
+    ...ELEMENT.ENEMY_BODY,
+    ...ELEMENT.ENEMY_TAIL
 ];

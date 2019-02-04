@@ -1,17 +1,13 @@
-import { ELEMENT, COMMANDS, ENEMY_SNAKE } from './constants';
+import { ELEMENT, COMMANDS, FURY_TARGETS } from './constants';
 import {
     isGameOver,
     getHeadPosition,
     getElementByXY,
-    getBoardSize,
-    getBoardAsArray,
-    getBoardAsString,
     getXYByPosition,
     getAt,
     getSnakeLength,
-    getEnemiesLength,
+    getEnemies,
     findNextElements,
-    getEnemiesCount,
     getSurround,
     getSurroundPoints
 } from './utils';
@@ -26,25 +22,17 @@ export function getNextSnakeMove(board, logger) {
         return '';
     }
     logger('Head:' + JSON.stringify(headPosition));
-
     return getNextCommand(board, headPosition);
 }
-
-let previousCommand = '';
-
-const oppositesMap = {
-    'LEFT': 'RIGHT',
-    'RIGHT': 'LEFT',
-    'UP': 'DOWN',
-    'DOWN': 'UP'
-};
 
 let allowed = [
     ELEMENT.NONE,
     ELEMENT.GOLD,
     ELEMENT.APPLE,
     ELEMENT.FURY_PILL,
-    ELEMENT.FLYING_PILL
+    ELEMENT.FLYING_PILL,
+    ...ELEMENT.ENEMY_TAIL,
+    ...ELEMENT.SNAKE_TAIL
 ];
 let itemsToSearchOriginal = [
     ELEMENT.GOLD,
@@ -58,81 +46,59 @@ let itemsToSearch = [
     ELEMENT.FURY_PILL
 ];
 
-let furyTargets = [ELEMENT.STONE].concat(ENEMY_SNAKE);
+let furyAllowed = allowed.concat(FURY_TARGETS);
 
-let furyAllowed = allowed.concat(furyTargets);
-
-let commandMap = {
-    LEFT: 0,
-    UP: 1,
-    RIGHT: 2,
-    DOWN: 3
+let snake = {
+    prevCommand: '',
+    furious: 0,
+    flying: 0,
+    length: 0,
+    head: null
 };
-
-let commandMapReverse = {
-    0: 'LEFT',
-    1: 'UP',
-    2: 'RIGHT',
-    3: 'DOWN'
-};
-
-let headSet = [
-    ELEMENT.HEAD_DOWN,
-    ELEMENT.HEAD_LEFT,
-    ELEMENT.HEAD_RIGHT,
-    ELEMENT.HEAD_UP,
-    ELEMENT.HEAD_DEAD,
-    ELEMENT.HEAD_EVIL,
-    ELEMENT.HEAD_FLY,
-    ELEMENT.HEAD_SLEEP
-];
-let isFury = 0;
-
-let PASSIVE_ENEMY_HEAD = [
-    ELEMENT.ENEMY_HEAD_DOWN,
-    ELEMENT.ENEMY_HEAD_LEFT,
-    ELEMENT.ENEMY_HEAD_RIGHT,
-    ELEMENT.ENEMY_HEAD_UP,
-    ELEMENT.ENEMY_HEAD_FLY
-];
 
 function getNextCommand(board, head) {
-    let itemPositions = [];
-    let enemies = getEnemiesLength(board);
-    furyControl(board);
-    let fireAct = isFury;
-    let SNAKE_LENGTH = getSnakeLength(board);
 
-    if (isFury) {
-        itemsToSearch = furyTargets;
+    snake.length = getSnakeLength(board);
+    snake.head = head;
+    snake.furious = getSnakeFurious(board);
+    snake.flying = getSnakeFlying(board);
+
+    let enemies = getEnemies(board);
+
+
+    let fireAct = snake.furious;
+
+    let itemPositions = [];
+
+    if (snake.furious) {
+        itemsToSearch = FURY_TARGETS;
         allowed = furyAllowed;
-    } else if (SNAKE_LENGTH > 4) {
+    } else if (snake.length > 4) {
         itemsToSearch = itemsToSearchOriginal;
         itemsToSearch.push(ELEMENT.STONE);
 
-        allowed = allowed.filter(item => !~furyTargets.indexOf(item));
+        allowed = allowed.filter(item => !~FURY_TARGETS.indexOf(item));
         allowed.push(ELEMENT.STONE)
     } else {
-        allowed = allowed.filter(item => !~furyTargets.indexOf(item));
+        allowed = allowed.filter(item => !~FURY_TARGETS.indexOf(item));
         itemsToSearch = itemsToSearchOriginal;
     }
 
     /*TODO: TEST aggressive mode*/
-    console.log(SNAKE_LENGTH, enemies.reduce((acc, enemy) => acc += enemy.length, 0));
+    console.log(snake.length, enemies.reduce((acc, enemy) => acc += enemy.length, 0));
 
-    let enemiesCount = getEnemiesCount(board);
-    allowed = allowed.filter(item => !~PASSIVE_ENEMY_HEAD.indexOf(item));
+    allowed = allowed.filter(item => !~ELEMENT.ENEMY_PASSIVE_HEAD.indexOf(item));
     allowed = allowed.filter(item => item !== ELEMENT.STONE);
     itemsToSearch = itemsToSearch.filter(item => item !== ELEMENT.STONE);
 
-    if (enemiesCount === 1) {
+    if (enemies.length === 1) {
         allowed = allowed.filter(item => item !== ELEMENT.STONE);
         itemsToSearch = itemsToSearch.filter(item => item !== ELEMENT.STONE);
-        if (SNAKE_LENGTH - enemies[0].length > 1) {
+        if (snake.length - enemies[0].length > 1) {
             let surround = getSurround(board, head);
             /*TODO: Search apples and coins in surround*/
-            itemsToSearch = PASSIVE_ENEMY_HEAD;
-            allowed = allowed.concat(PASSIVE_ENEMY_HEAD)
+            itemsToSearch = ELEMENT.ENEMY_PASSIVE_HEAD;
+            allowed = allowed.concat(ELEMENT.ENEMY_PASSIVE_HEAD)
         }
     }
 
@@ -146,17 +112,17 @@ function getNextCommand(board, head) {
 
     let potentialTargetsCount = 0;
     enemies.forEach(enemy => {
-        if (SNAKE_LENGTH - enemy.length > 1) {
+        if (snake.length - enemy.length > 1) {
             potentialTargetsCount++;
-            itemPositions.push(enemy);
+            itemPositions.push(enemy.head);
         }
     });
 
     console.log('targets:', potentialTargetsCount);
 
     if (potentialTargetsCount) {
-        itemsToSearch = itemsToSearch.concat(PASSIVE_ENEMY_HEAD);
-        allowed = allowed.concat(PASSIVE_ENEMY_HEAD);
+        itemsToSearch = itemsToSearch.concat(ELEMENT.ENEMY_PASSIVE_HEAD);
+        allowed = allowed.concat(ELEMENT.ENEMY_PASSIVE_HEAD);
     }
 
     let { nearestDistancesPoint, nearestPoint } = findNearestPoint(board, head, itemPositions);
@@ -175,17 +141,27 @@ function getNextCommand(board, head) {
 
     preCommand = findSafe(board, head, nearestPoint, preCommand);
 
-    previousCommand = preCommand;
+    snake.prevCommand = preCommand;
     return fireAct ? `ACT,${preCommand}` : preCommand;
 }
 
-function furyControl(board) {
-    if (~board.indexOf(ELEMENT.HEAD_EVIL) && isFury < 1) {
-        isFury = 9;
+function getSnakeFurious(board) {
+    if (~board.indexOf(ELEMENT.HEAD_EVIL) && snake.furious < 1) {
+        return 9;
     } else if (~board.indexOf(ELEMENT.HEAD_EVIL)) {
-        isFury--;
+        return snake.furious - 1;
     } else {
-        isFury = 0;
+        return 0;
+    }
+}
+
+function getSnakeFlying(board) {
+    if (~board.indexOf(ELEMENT.HEAD_FLY) && snake.flying < 1) {
+        return 9;
+    } else if (~board.indexOf(ELEMENT.HEAD_FLY)) {
+        return snake.flying - 1;
+    } else {
+        return 0;
     }
 }
 
@@ -196,7 +172,7 @@ function findNextItem(board, offset) {
 function isPointAccessible(board, position) {
     let nextPoint = getAt(board, position.x, position.y);
     let allowedClone = allowed.slice();
-    if (nextPoint === ELEMENT.STONE && isFury < 2 && getSnakeLength(board) < 8) {
+    if (nextPoint === ELEMENT.STONE && snake.furious < 2 && getSnakeLength(board) < 8) {
         allowedClone = allowedClone.filter(item => item !== ELEMENT.STONE);
     }
     let surroundBlockers = getSurroundPoints(position)
@@ -226,7 +202,7 @@ function findSafe(board, head, endPoint, nextCommand) {
     /*LEFT,UP,RIGHT,DOWN*/
     let surround = getSurround(board, head);
     let surroundPoints = getSurroundPoints(head);
-    let currentCommandIndex = commandMap[nextCommand];
+    let currentCommandIndex = COMMANDS.GET_INDEX[nextCommand];
 
     if (isPointAllowed(surround[currentCommandIndex])
         && isPointAccessible(board, surroundPoints[currentCommandIndex])) {
@@ -244,8 +220,8 @@ function findNearestPoint(board, startPoint, points) {
         let directionToPointX = item.xDirection = item.dx >= 0 ? 'LEFT' : 'RIGHT';
         let directionToPointY = item.yDirection = item.dy >= 0 ? 'UP' : 'DOWN';
 
-        let additionalXSteps = oppositesMap[previousCommand] === directionToPointX ? 2 : 0;
-        let additionalYSteps = oppositesMap[previousCommand] === directionToPointY ? 2 : 0;
+        let additionalXSteps = COMMANDS.OPPOSITE[snake.prevCommand] === directionToPointX ? 2 : 0;
+        let additionalYSteps = COMMANDS.OPPOSITE[snake.prevCommand] === directionToPointY ? 2 : 0;
 
         let { isYSafe, isXSafe } = isSafeVHPath(board, startPoint, item);
 
@@ -330,7 +306,7 @@ function turnSideways(board, head, isVertical) {
 }
 
 function isCommandOppositeToPrevious(preCommand) {
-    return oppositesMap[preCommand] === previousCommand;
+    return COMMANDS.OPPOSITE[preCommand] === snake.prevCommand;
 }
 
 function moveToPoint(board, head, point, distancePoint) {
@@ -342,7 +318,7 @@ function moveToPoint(board, head, point, distancePoint) {
 }
 
 function isSafeVHPath(board, headOrigin, distancePoint) {
-    let head = Object.assign({}, headOrigin);
+    let head = { ...headOrigin };
     let yPath = [];
     for (let i = 0; i < Math.abs(distancePoint.dy); i++) {
         yPath.push({
@@ -402,7 +378,7 @@ function rateElement(element) {
 }
 
 function findNearestSafePoint(board, head, currentCommand, endPoint) {
-    let skippedIndex = commandMap[currentCommand];
+    let skippedIndex = COMMANDS.GET_INDEX[currentCommand];
     let surround = getSurroundPoints(head);
     let surroundCandidates = surround.slice();
 
@@ -428,7 +404,7 @@ function findNearestSafePoint(board, head, currentCommand, endPoint) {
     }
 
     let index = findByXY(candidate, surround);
-    return commandMapReverse[index];
+    return COMMANDS.BY_INDEX[index];
 
 }
 

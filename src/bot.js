@@ -12,6 +12,8 @@ import {
     getSurroundPoints
 } from './utils';
 
+import * as _ from 'lodash';
+
 // Bot Example
 export function getNextSnakeMove(board, logger) {
     if (isGameOver(board)) {
@@ -49,26 +51,28 @@ let itemsToSearch = [
 let furyAllowed = allowed.concat(FURY_TARGETS);
 
 let snake = {
-    prevCommand: '',
+    prevCommand: 'RIGHT',
     furious: 0,
     flying: 0,
     length: 0,
-    head: null
+    stones: 0,
+    head: null,
+    allowed_cells: null,
+    search_items: null,
+    mode: 'farm'
 };
 
 function getNextCommand(board, head) {
+    let enemies = getEnemies(board);
 
     snake.length = getSnakeLength(board);
     snake.head = head;
     snake.furious = getSnakeFurious(board);
     snake.flying = getSnakeFlying(board);
+    snake.allowed_cells = getAllowedCells(board, enemies);
+    snake.search_items = getSearchItems(board, enemies);
 
-    let enemies = getEnemies(board);
-
-
-    let fireAct = snake.furious;
-
-    let itemPositions = [];
+    let dropStone = snake.furious;
 
     if (snake.furious) {
         itemsToSearch = FURY_TARGETS;
@@ -102,6 +106,8 @@ function getNextCommand(board, head) {
         }
     }
 
+    let itemPositions = [];
+
     let offset = -1;
     while ((offset = findNextItem(board, offset)) >= 0) {
         let position = getXYByPosition(board, offset);
@@ -125,6 +131,8 @@ function getNextCommand(board, head) {
         allowed = allowed.concat(ELEMENT.ENEMY_PASSIVE_HEAD);
     }
 
+    console.log(allowed, snake.allowed_cells);
+
     let { nearestDistancesPoint, nearestPoint } = findNearestPoint(board, head, itemPositions);
 
     if (!nearestDistancesPoint) {
@@ -139,10 +147,9 @@ function getNextCommand(board, head) {
         preCommand = turnSideways(board, head, nearestDistancesPoint.dy);
     }
 
-    preCommand = findSafe(board, head, nearestPoint, preCommand);
+    preCommand = snake.prevCommand = findSafe(board, head, nearestPoint, preCommand);
 
-    snake.prevCommand = preCommand;
-    return fireAct ? `ACT,${preCommand}` : preCommand;
+    return dropStone ? `${preCommand},ACT` : preCommand;
 }
 
 function getSnakeFurious(board) {
@@ -163,6 +170,82 @@ function getSnakeFlying(board) {
     } else {
         return 0;
     }
+}
+
+function getAllowedCells(board, enemies) {
+    let extra_allowed = [];
+    if ((snake.furious || snake.flying || snake.length > 4) && snake.mode === 'farm') {
+        extra_allowed.push(ELEMENT.STONE);
+    }
+
+    if (snake.flying) {
+        extra_allowed = [
+            ...extra_allowed,
+            ...ELEMENT.SNAKE_BODY,
+            ...ELEMENT.ENEMY_ELEMENTS
+        ]
+    }
+
+    if (snake.furious) {
+        extra_allowed = [
+            ...extra_allowed,
+            ...ELEMENT.ENEMY_BODY
+        ]
+    }
+
+    if (enemies.some(enemy => snake.length - enemy.length > 1)) {
+        /*TODO:May be no the best place to make it allowed*/
+        extra_allowed = [
+            ...extra_allowed,
+            ...ELEMENT.ENEMY_PASSIVE_HEAD
+        ]
+    }
+
+    return _.uniq([...allowed, ...extra_allowed]);
+}
+
+function getSearchItems(board, enemies) {
+    let search_items = [...itemsToSearchOriginal];
+    let surround = getSurround(board, snake.head);
+
+    if (snake.mode === 'farm') {
+        if (snake.furious) {
+            search_items = [ELEMENT.STONE];
+        }
+
+        if (!snake.furious && snake.length > 4) {
+            search_items.push(ELEMENT.STONE);
+        }
+    }
+
+    if (snake.mode === 'pvp') {
+        /*if (enemies.some(enemy => snake.length - enemy.length > 1)) {
+            search_items = [
+                ...search_items,
+                ...ELEMENT.ENEMY_PASSIVE_HEAD
+            ]
+        }*/
+
+        if (enemies.length === 1 && snake.length - enemies[0].length > 1) {
+            search_items = ELEMENT.ENEMY_PASSIVE_HEAD;
+            let surroundForward = surround.splice(COMMANDS.GET_INDEX[snake.prevCommand], 1);
+
+            //Search for surround apples, coins and fury pills
+            let foundItemIndex = -1;
+            if (surroundForward.some(item => {
+                foundItemIndex = itemsToSearchOriginal.indexOf(item);
+                return !!~foundItemIndex;
+            })) {
+                search_items.push(itemsToSearchOriginal[foundItemIndex]);
+            }
+        }
+    }
+
+    if (snake.furious && surround.some(item => !!~FURY_TARGETS.indexOf(item))) {
+        search_items = FURY_TARGETS;
+    }
+
+    return _.unique(search_items);
 }
 
 function findNextItem(board, offset) {

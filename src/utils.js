@@ -265,3 +265,9 @@ export function getElementByXY(board, position) {
     const size = getBoardSize(board);
     return board[size * position.y + position.x];
 }
+
+export function setAt(board, position, element) {
+    const size = getBoardSize(board);
+    let index = size * position.y + position.x;
+    return board.substr(0, index) + element + board.substr(index + 1);
+}

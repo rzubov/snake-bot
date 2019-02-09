@@ -46,7 +46,7 @@ let SEARCH_ITEMS = [
     ELEMENT.FURY_PILL
 ];
 
-let debug = false;
+let debug = true;
 
 let snake = {
     prevCommand: 'RIGHT',
@@ -73,12 +73,11 @@ function getNextCommand(board, head) {
     snake.allowed_cells = getAllowedCells(board, enemies);
     snake.search_items = getSearchItems(board, enemies);
     GRID = getBoardGrid(board, enemies);
-    console.log(snake.search_items);
     if (debug) {
         console.log('allowed:', snake.allowed_cells);
         console.log('search items:', snake.search_items);
         console.log('snake length:', snake.length);
-        console.log('stones:', snake.stones)
+        //console.log('stones:', snake.stones)
     }
 
     let dropStone = snake.furious;
@@ -132,16 +131,16 @@ function getBoardGrid(board, enemies) {
     enemies.forEach(enemy => {
         if (snake.length - enemy.length < 2) {
             getSurroundPoints(enemy.head).forEach(point => {
-                boardClone = setAt(board, point, ELEMENT.WALL);
+                boardClone = setAt(boardClone, point, ELEMENT.WALL);
             })
         }
-        if (enemy.head === ELEMENT.ENEMY_HEAD_EVIL) {
+        if (getAt(board, enemy.head.x, enemy.head.y) === ELEMENT.ENEMY_HEAD_EVIL && snake.furious < 2) {
             getSurroundPoints(enemy.head).forEach(point => {
-                boardClone = setAt(board, point, ELEMENT.WALL);
+                boardClone = setAt(boardClone, point, ELEMENT.WALL);
             })
         }
     });
-
+    
     return new PF.Grid(getBoardAsArray(boardClone).map(line => {
         return line.split('').map(char => {
             return isPointAllowed(char) ? 0 : 1;
@@ -186,7 +185,8 @@ function getAllowedCells(board, enemies) {
     if (snake.furious) {
         extra_allowed = [
             ...extra_allowed,
-            ...ELEMENT.ENEMY_BODY
+            ...ELEMENT.ENEMY_BODY,
+            ELEMENT.STONE
         ]
     }
 
@@ -231,8 +231,10 @@ function getSearchItems(board, enemies) {
         }*/
 
         if ((enemies.length === 1 && (snake.length - enemies[0].length) > 1)
-            /*|| snake.length - enemies.reduce((acc, enemy) => acc + enemy.length, 0)*/) {
+        /*|| snake.length - enemies.reduce((acc, enemy) => acc + enemy.length, 0)*/) {
             console.log('HUNT MODE!')
+            console.log('snake length:', snake.length);
+            console.log('enemy:', enemies[0].length);
             search_items = [...ELEMENT.ENEMY_PASSIVE_HEAD];
 
             //Search for surround apples, coins and fury pills
@@ -250,6 +252,7 @@ function getSearchItems(board, enemies) {
     }
 
     if (snake.furious && surround.some(item => !!~FURY_TARGETS.indexOf(item))) {
+        console.log('furious and fury targets around');
         search_items = [...FURY_TARGETS];
     }
 

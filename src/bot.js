@@ -1,6 +1,7 @@
 import { ELEMENT, COMMANDS, FURY_TARGETS } from './constants';
 import {
     isGameOver,
+    isGameStarting,
     getHeadPosition,
     getElementByXY,
     getXYByPosition,
@@ -46,7 +47,7 @@ let SEARCH_ITEMS = [
     ELEMENT.FURY_PILL
 ];
 
-let debug = true;
+let debug = false;
 
 let snake = {
     prevCommand: 'RIGHT',
@@ -64,6 +65,15 @@ let GRID = null;
 let finder = new PF.AStarFinder();
 
 function getNextCommand(board, head) {
+    console.log('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~');
+    console.log(new Date());
+    if (isGameStarting(board)) {
+        console.log('Game starting...');
+        snake.furious = 0;
+        snake.flying = 0;
+        snake.stones = 0;
+    }
+
     let enemies = getEnemies(board);
 
     snake.length = getSnakeLength(board);
@@ -72,23 +82,35 @@ function getNextCommand(board, head) {
     snake.flying = getSnakeFlying(board);
     snake.allowed_cells = getAllowedCells(board, enemies);
     snake.search_items = getSearchItems(board, enemies);
+    if (!snake.search_items.length) {
+        snake.search_items = [...SEARCH_ITEMS];
+    }
+
     GRID = getBoardGrid(board, enemies);
     if (debug) {
         console.log('allowed:', snake.allowed_cells);
         console.log('search items:', snake.search_items);
         console.log('snake length:', snake.length);
-        //console.log('stones:', snake.stones)
+        console.log('stones:', snake.stones)
     }
 
     let dropStone = snake.furious;
 
     let items = getItems(board, enemies);
 
-    let { nearestDistancesPoint, nearestPoint, nextPoint } = findNearestPoint(board, head, items);
+    let { nextPoint } = findNearestPoint(board, head, items);
 
     if (!nextPoint.x) {
-        console.log('NO NEXT STEP:', board);
-        return getCommandByRatings(board);
+        console.warn('No PRIMARY targets accessible!');
+        snake.search_items = [...SEARCH_ITEMS];
+        let items = getItems(board, enemies);
+        ({ nextPoint } = findNearestPoint(board, head, items));
+
+        if (!nextPoint.x) {
+            console.warn('No SECONDARY targets accessible!', getBoardAsString(board));
+            console.warn('Getting command by rating...');
+            return getCommandByRatings(board);
+        }
     }
 
     if (nextPoint.x && getAt(board, nextPoint.x, nextPoint.y) === ELEMENT.STONE) {
@@ -115,6 +137,7 @@ function getNextCommand(board, head) {
     if (dropStone) {
         snake.stones--;
     }
+    console.log('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~');
     return dropStone ? `${preCommand},ACT` : preCommand;
 }
 
@@ -129,21 +152,28 @@ function getBoardGrid(board, enemies) {
 
     let boardClone = board;
     enemies.forEach(enemy => {
-        if (snake.length - enemy.length < 2) {
-            getSurroundPoints(enemy.head).forEach(point => {
-                boardClone = setAt(boardClone, point, ELEMENT.WALL);
+        let enemyHeadSurround = getSurroundPoints(enemy.head);
+        if (snake.length - enemy.length < 2 && snake.furious < 2) {
+            enemyHeadSurround.forEach(point => {
+                if (!~ELEMENT.ENEMY_ELEMENTS.indexOf(getAt(boardClone, point.x, point.y))) {
+                    boardClone = setAt(boardClone, point, ELEMENT.WALL);
+                }
             })
         }
-        if (getAt(board, enemy.head.x, enemy.head.y) === ELEMENT.ENEMY_HEAD_EVIL && snake.furious < 2) {
-            getSurroundPoints(enemy.head).forEach(point => {
-                boardClone = setAt(boardClone, point, ELEMENT.WALL);
+        if (enemy.isFurious && snake.furious < 2) {
+            enemyHeadSurround.forEach(point => {
+                if (!~ELEMENT.ENEMY_ELEMENTS.indexOf(getAt(boardClone, point.x, point.y))) {
+                    boardClone = setAt(boardClone, point, ELEMENT.WALL);
+                }
             })
         }
     });
-    
-    return new PF.Grid(getBoardAsArray(boardClone).map(line => {
-        return line.split('').map(char => {
-            return isPointAllowed(char) ? 0 : 1;
+
+    console.log(getBoardAsString(boardClone));
+
+    return new PF.Grid(getBoardAsArray(boardClone).map((line, x) => {
+        return line.split('').map((char, y) => {
+            return isPointAllowed(char) /*&& isPointAccessible(boardClone, { x, y })*/ ? 0 : 1;
         });
     }));
 }
@@ -223,18 +253,12 @@ function getSearchItems(board, enemies) {
     }
 
     if (snake.mode === 'pvp') {
-        /*if (enemies.some(enemy => snake.length - enemy.length > 1)) {
-            search_items = [
-                ...search_items,
-                ...ELEMENT.ENEMY_PASSIVE_HEAD
-            ]
-        }*/
-
+        let totalEnemiesLength = enemies.reduce((acc, enemy) => acc + enemy.length, 0);
         if ((enemies.length === 1 && (snake.length - enemies[0].length) > 1)
-        /*|| snake.length - enemies.reduce((acc, enemy) => acc + enemy.length, 0)*/) {
-            console.log('HUNT MODE!')
+            || snake.length - totalEnemiesLength > 1) {
+            console.log('HUNT MODE!');
             console.log('snake length:', snake.length);
-            console.log('enemy:', enemies[0].length);
+            console.log('total enemies length:', totalEnemiesLength);
             search_items = [...ELEMENT.ENEMY_PASSIVE_HEAD];
 
             //Search for surround apples, coins and fury pills
@@ -251,9 +275,11 @@ function getSearchItems(board, enemies) {
         }
     }
 
-    if (snake.furious && surround.some(item => !!~FURY_TARGETS.indexOf(item))) {
+    if (snake.furious /*&& surround.some(item => !!~FURY_TARGETS.indexOf(item))*/) {
         console.log('furious and fury targets around');
-        search_items = [...FURY_TARGETS];
+        search_items = [
+            ...search_items,
+            ...FURY_TARGETS];
     }
 
     return _.uniq(search_items);
@@ -349,11 +375,12 @@ function findNearestPoint(board, startPoint, points) {
 
     let nearestPoint = points[pointIndex];
     let nearestDistancesPoint = distancesPoints[pointIndex];
-    let nextStep = paths[pointIndex][1] || [];
+    let foundPath = paths[pointIndex] || [];
+    let nextStep = foundPath[1] || [];
 
     if (!nextStep.length) {
         console.log('no next step:', nextStep);
-        console.log('board:', getBoardAsString(board));
+        console.log(getBoardAsString(board));
         console.log('paths:', paths);
     }
 
@@ -362,7 +389,7 @@ function findNearestPoint(board, startPoint, points) {
         y: nextStep[1]
     };
     return {
-        nearestPoint, nearestDistancesPoint, nextPoint
+        /* nearestPoint, nearestDistancesPoint,*/ nextPoint
     }
 }
 
@@ -435,14 +462,14 @@ function rateElement(element) {
     switch (element) {
         case ELEMENT.GOLD:
         case ELEMENT.APPLE:
-            return 5;
+            return 10;
         case ELEMENT.FURY_PILL:
         case ELEMENT.FLYING_PILL:
-            return 4;
+            return 9;
         case ELEMENT.NONE:
-            return 3;
+            return 8;
         case ELEMENT.STONE:
-            return 2;
+            return snake.length > 4 ? 7 : 5;
         case ELEMENT.TAIL_END_DOWN:
         case ELEMENT.TAIL_END_LEFT:
         case ELEMENT.TAIL_END_UP:
@@ -454,7 +481,10 @@ function rateElement(element) {
         case ELEMENT.BODY_LEFT_UP:
         case ELEMENT.BODY_RIGHT_DOWN:
         case ELEMENT.BODY_RIGHT_UP:
-            return 1;
+            return 6;
+        case ELEMENT.START_FLOOR:
+        case ELEMENT.WALL:
+            return 4;
         default:
             return -1
     }
@@ -496,9 +526,11 @@ function findByXY(point, pointsList = []) {
 function getCommandByRatings(board) {
     let surround = getSurround(board, snake.head);
     let ratings = surround.map(rateElement);
-    let backCellIndex = COMMANDS.GET_INDEX[snake.prevCommand];
-    let ratingsCopy = [...ratings];
-    ratingsCopy.splice(backCellIndex, 1);
+    let previous = COMMANDS.GET_INDEX[snake.prevCommand];
 
-    return COMMANDS.BY_INDEX[ratings.indexOf(Math.max(...ratingsCopy))];
+    console.log('surround:', surround);
+    console.log('ratings:', ratings);
+
+    let maxRatingIndex = ratings.findIndex(item => !ratings.some((rating, index) => rating > item && index !== previous));
+    return COMMANDS.BY_INDEX[maxRatingIndex];
 }

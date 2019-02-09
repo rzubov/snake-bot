@@ -1,4 +1,5 @@
 import {
+    COMMANDS,
     ELEMENT
 } from './constants';
 
@@ -77,16 +78,14 @@ function getComputedEnemy(board, position) {
             position.x--;
             break;
         default:
-            let surroundPoints = getSurroundPoints(position);
-            let surround = getSurround(board, position);
-            let index = surround.findIndex(item => ~ENEMY_HEADLESS.indexOf(item));
-            position = surroundPoints[index];
+            position = findNextToHead(board, position);
             if (headType === ELEMENT.ENEMY_HEAD_EVIL) {
                 enemy.isFurious = true;
             } else if (headType === ELEMENT.ENEMY_HEAD_FLY) {
                 enemy.isFlying = true;
+            } else if (!~[ELEMENT.ENEMY_HEAD_SLEEP, ELEMENT.ENEMY_HEAD_DEAD].indexOf(headType)) {
+                console.log('Unexpected head type:', headType);
             }
-
     }
 
     enemy.path.push({ ...position });
@@ -102,16 +101,20 @@ function getComputedEnemy(board, position) {
         }
 
         if (!~ELEMENT.ENEMY_ELEMENTS.indexOf(element)) {
-            console.log(prevPosition, position);
-            console.log(element);
-            console.log(getBoardAsString(board));
-            console.log('PREV?', getAt(board, prevPosition.x, prevPosition.y));
-            console.log('Looks like a bug!Not a part of enemy');
+            let debugInfo = {
+                prevPosition,
+                prevElement: getAt(board, prevPosition.x, prevPosition.y),
+                position,
+                element
+            };
+            console.warn('Looks like a bug! Not a part of enemy:', debugInfo);
+            console.warn(getBoardAsString(board));
             break;
         }
 
-        if (enemyLength > 50) {
-            console.log(`I don't fucking care about length more than 50 ;)`);
+        if (enemyLength > 100) {
+            /*TODO: possible to use function like findNextToHead to find next part */
+            console.warn(`The enemy possibly malformed with ☺ or length > 100`);
             break;
         }
 
@@ -176,6 +179,47 @@ function getComputedEnemy(board, position) {
     return enemy;
 }
 
+function findNextToHead(board, position) {
+    let surroundPoints = getSurroundPoints(position);
+    let surround = getSurround(board, position);
+
+    let nextElementIndex = surround.findIndex((element, index) => {
+        if (!~ENEMY_HEADLESS.indexOf(element)) {
+            return false;
+        }
+        let direction = COMMANDS.BY_INDEX[index];
+        switch (element) {
+            case ELEMENT.ENEMY_BODY_VERTICAL:
+                return !~['LEFT', 'RIGHT'].indexOf(direction);
+            case ELEMENT.ENEMY_BODY_HORIZONTAL:
+                return !~['UP', 'DOWN'].indexOf(direction);
+            case ELEMENT.ENEMY_BODY_LEFT_DOWN:
+                return !~['LEFT', 'DOWN'].indexOf(direction);
+            case ELEMENT.ENEMY_BODY_LEFT_UP:
+                return !~['LEFT', 'UP'].indexOf(direction);
+            case ELEMENT.ENEMY_BODY_RIGHT_DOWN:
+                return !~['RIGHT', 'DOWN'].indexOf(direction);
+            case ELEMENT.ENEMY_BODY_RIGHT_UP:
+                return !~['RIGHT', 'UP'].indexOf(direction);
+            case ELEMENT.ENEMY_TAIL_END_DOWN:
+                return !!~['DOWN'].indexOf(direction);
+            case ELEMENT.ENEMY_TAIL_END_LEFT:
+                return !!~['LEFT'].indexOf(direction);
+            case ELEMENT.ENEMY_TAIL_END_UP:
+                return !!~['UP'].indexOf(direction);
+            case ELEMENT.ENEMY_TAIL_END_RIGHT:
+                return !!~['RIGHT'].indexOf(direction);
+            case ELEMENT.ENEMY_TAIL_INACTIVE:
+                return true;
+            default:
+                console.warn('Something going wrong:', { element, direction });
+                return false;
+        }
+
+    });
+    return surroundPoints[nextElementIndex];
+}
+
 export function getSurround(board, position) {
     return getSurroundPoints(position)
         .map(point => getElementByXY(board, point))
@@ -200,6 +244,10 @@ export function findNextElements(board, offset, elements) {
 
 export function isGameOver(board) {
     return board.indexOf(ELEMENT.HEAD_DEAD) !== -1;
+}
+
+export function isGameStarting(board) {
+    return board.indexOf(ELEMENT.HEAD_SLEEP) !== -1;
 }
 
 export function isAt(board, x, y, element) {

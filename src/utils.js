@@ -235,6 +235,29 @@ export function getSurroundPoints(position) {
     ];
 }
 
+export function getSurroundEcho(board, position, distance = 1) {
+
+    const p = position;
+
+    let surround = [];
+    for (let i = 0; i < distance; i++) {
+
+        for (let j = 0; j < distance - i; j++) {
+            let step = (j + 1);
+            surround = [
+                ...surround,
+                { x: p.x - step, y: p.y - i }, // LEFT
+                { x: p.x + i, y: p.y - step }, // UP
+                { x: p.x + step, y: p.y + i }, // RIGHT
+                { x: p.x - i, y: p.y + step }, // DOWN
+
+            ];
+        }
+
+    }
+    return surround.map(point => getAt(board, point.x, point.y))
+}
+
 export function findNextElements(board, offset, elements) {
     let foundItems = elements
         .map(item => board.indexOf(item, offset + 1))

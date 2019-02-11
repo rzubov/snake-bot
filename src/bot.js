@@ -13,7 +13,8 @@ import {
     getSurround,
     getSurroundPoints,
     getBoardSize,
-    getBoardAsArray, getBoardAsString
+    getBoardAsArray, getBoardAsString,
+    getSurroundEcho
 } from './utils';
 
 import * as _ from 'lodash';
@@ -279,7 +280,19 @@ function getSearchItems(board, enemies) {
         console.log('furious and fury targets around');
         search_items = [
             ...search_items,
-            ...FURY_TARGETS];
+            ...ELEMENT.STONE
+        ];
+        if (snake.furious > 1) {
+            let nearbyEcho = getSurroundEcho(board, snake.head, snake.furious);
+            console.log(nearbyEcho);
+            if (~nearbyEcho.some(point => ~FURY_TARGETS.indexOf(point))) {
+                console.log('FURY ATTACK!');
+                search_items = [
+                    ...FURY_TARGETS
+                ]
+            }
+        }
+
     }
 
     return _.uniq(search_items);
@@ -355,6 +368,9 @@ function findSafe(board, head, endPoint, nextCommand) {
 }
 
 function findNearestPoint(board, startPoint, points) {
+    if (!startPoint) {
+        return { x: null, y: null }
+    }
 
     let paths = points.map(point => {
         return finder.findPath(startPoint.x, startPoint.y, point.x, point.y, GRID.clone());

@@ -151,8 +151,6 @@ export const COMMANDS = {
 };
 
 export const FURY_TARGETS = [
-    ELEMENT.STONE,
-
     ...ELEMENT.ENEMY_PASSIVE_HEAD,
     ...ELEMENT.ENEMY_BODY,
     ...ELEMENT.ENEMY_TAIL

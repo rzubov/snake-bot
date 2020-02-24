@@ -309,6 +309,12 @@ export function getHeadPosition(board) {
     ]);
 }
 
+export function getTailPosition(board) {
+    return getFirstPositionOf(board, [
+        ...ELEMENT.SNAKE_TAIL
+    ]);
+}
+
 export function getFirstPositionOf(board, elements) {
     for (let i = 0; i < elements.length; i++) {
         let element = elements[i];

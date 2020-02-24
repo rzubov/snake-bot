@@ -13,8 +13,10 @@ import {
     getSurround,
     getSurroundPoints,
     getBoardSize,
-    getBoardAsArray, getBoardAsString,
-    getSurroundEcho
+    getBoardAsArray,
+    getBoardAsString,
+    getSurroundEcho,
+    getTailPosition
 } from './utils';
 
 import * as _ from 'lodash';
@@ -48,7 +50,7 @@ let SEARCH_ITEMS = [
     ELEMENT.FURY_PILL
 ];
 
-let debug = false;
+let debug = true;
 
 let snake = {
     prevCommand: 'RIGHT',
@@ -95,11 +97,11 @@ function getNextCommand(board, head) {
         console.log('stones:', snake.stones)
     }
 
-    let dropStone = snake.furious;
+    let dropStone = isHeadOnTheTail(board);
 
     let items = getItems(board, enemies);
 
-    let { nextPoint } = findNearestPoint(board, head, items);
+    let { nextPoint } = findNearestPoint(board, head, items, enemies);
 
     if (!nextPoint.x) {
         console.warn('No PRIMARY targets accessible!');
@@ -135,11 +137,62 @@ function getNextCommand(board, head) {
        }
 
        preCommand = snake.prevCommand = findSafe(board, head, nearestPoint, preCommand);*/
-    if (dropStone) {
+    if (dropStone && snake.stones > 0) {
         snake.stones--;
+    }
+
+
+    if (isKillerAround(enemies)) {
+        console.warn('KAMIKADZE!!')
+        return 'ACT(0)';
     }
     console.log('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~');
     return dropStone ? `${preCommand},ACT` : preCommand;
+}
+
+function isDangerousEnemy(enemy) {
+    return (enemy.length - snake.length > 1 && !snake.furious) ||
+        (enemy.isFurious && !snake.furious) ||
+        (snake.length - enemy.length > 1 && enemy.isFurious && snake.furious)
+
+}
+
+function isKillerAround(emenies) {
+    let surroundPoints = getSurroundPoints(snake.head);
+
+    return emenies.some(enemy => {
+        return surroundPoints.some(sp => {
+            let isAround = sp.x === enemy.head.x && sp.y === enemy.head.y;
+            let isDangerous = isDangerousEnemy(enemy);
+            return isAround && isDangerous;
+        });
+    });
+}
+
+function isHeadOnTheTail(board) {
+    let tailPosition = getTailPosition(board);
+    if (!tailPosition) {
+        console.warn('tailPosition', tailPosition);
+        return false;
+    }
+    let tailElement = getAt(board, tailPosition.x, tailPosition.y);
+
+    switch (tailElement) {
+        case ELEMENT.TAIL_END_DOWN:
+            tailPosition.y += 1;
+            break;
+        case ELEMENT.TAIL_END_UP:
+            tailPosition.y -= 1;
+            break;
+        case ELEMENT.TAIL_END_LEFT:
+            tailPosition.x -= 1;
+            break;
+        case ELEMENT.TAIL_END_RIGHT:
+            tailPosition.x += 1;
+    }
+
+    let nextToTail = getAt(board, tailPosition.x, tailPosition.y);
+    return ~ELEMENT.ENEMY_PASSIVE_HEAD.indexOf(nextToTail);
 }
 
 function computeDirection(fromPoint, toPoint) {
@@ -170,7 +223,7 @@ function getBoardGrid(board, enemies) {
         }
     });
 
-    console.log(getBoardAsString(boardClone));
+    /*console.log(getBoardAsString(boardClone));*/
 
     return new PF.Grid(getBoardAsArray(boardClone).map((line, x) => {
         return line.split('').map((char, y) => {
@@ -285,7 +338,7 @@ function getSearchItems(board, enemies) {
         if (snake.furious > 1) {
             let nearbyEcho = getSurroundEcho(board, snake.head, snake.furious);
             console.log(nearbyEcho);
-            if (~nearbyEcho.some(point => ~FURY_TARGETS.indexOf(point))) {
+            if (nearbyEcho.some(point => ~FURY_TARGETS.indexOf(point))) {
                 console.log('FURY ATTACK!');
                 search_items = [
                     ...FURY_TARGETS
@@ -367,7 +420,7 @@ function findSafe(board, head, endPoint, nextCommand) {
     }
 }
 
-function findNearestPoint(board, startPoint, points) {
+function findNearestPoint(board, startPoint, points, enemies) {
     if (!startPoint) {
         return { x: null, y: null }
     }
@@ -542,11 +595,16 @@ function findByXY(point, pointsList = []) {
 function getCommandByRatings(board) {
     let surround = getSurround(board, snake.head);
     let ratings = surround.map(rateElement);
-    let previous = COMMANDS.GET_INDEX[snake.prevCommand];
+    let previous = COMMANDS.GET_INDEX[COMMANDS.OPPOSITE[snake.prevCommand]];
 
     console.log('surround:', surround);
     console.log('ratings:', ratings);
 
     let maxRatingIndex = ratings.findIndex(item => !ratings.some((rating, index) => rating > item && index !== previous));
+    console.log('previous:', previous);
+    console.log('maxRatingIndex:', maxRatingIndex);
+    if (maxRatingIndex === -1) {
+        return 'ACT(0)';
+    }
     return COMMANDS.BY_INDEX[maxRatingIndex];
 }
